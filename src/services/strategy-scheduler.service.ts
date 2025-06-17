@@ -313,6 +313,10 @@ Strategy 2 входов: ${decisionStats.strategy2}
       });
 
       const spread = maxRate - minRate;
+      
+      // Проверяем, что nextFundingTime не null
+      if (!nextFundingTime) return;
+      
       const timeToFunding = (nextFundingTime - currentTime) / (1000 * 60); // в минутах
 
       // Критерии для потенциальной сделки:
