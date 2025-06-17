@@ -38,6 +38,9 @@ export class StrategySchedulerService {
 
       this.logger.log(`📊 Получено ${spreadsData.length} тикеров для анализа`);
 
+      // 1.5. Проверяем потенциальные сделки на будущее
+      this.checkPotentialTrades(spreadsData);
+
       // 2. Анализ Strategy 1 (Rate Arbitrage)
       const strategy1Opportunities = this.strategy1Service.analyzeAllTickers(spreadsData);
       
@@ -262,6 +265,119 @@ Strategy 2 входов: ${decisionStats.strategy2}
     });
 
     return stats;
+  }
+
+  /**
+   * Проверяет потенциальные сделки, которые могут быть выполнены в будущем
+   */
+  private checkPotentialTrades(spreadsData: any[]): void {
+    const currentTime = Date.now();
+    const potentialTrades: any[] = [];
+
+    // Проверяем каждый тикер на потенциальные возможности
+    spreadsData.forEach(ticker => {
+      // Пропускаем тикеры без данных или с нулевым спредом
+      if (!ticker.spread || ticker.spread <= 0) return;
+
+      // Ищем лучшие пары бирж для арбитража
+      const exchanges = ['binance', 'bybit', 'bitget', 'bingx', 'mexc', 'bitmex', 'okx'];
+      const validExchanges = exchanges.filter(ex => 
+        ticker[ex] && 
+        ticker[ex].fundingRate !== null && 
+        ticker[ex].fundingRate !== undefined &&
+        ticker[ex].nextFundingTime
+      );
+
+      if (validExchanges.length < 2) return;
+
+      // Находим максимальный и минимальный funding rate
+      let maxRate = -Infinity;
+      let minRate = Infinity;
+      let maxExchange = '';
+      let minExchange = '';
+      let nextFundingTime = null;
+
+      validExchanges.forEach(ex => {
+        const rate = ticker[ex].fundingRate;
+        if (rate > maxRate) {
+          maxRate = rate;
+          maxExchange = ex;
+        }
+        if (rate < minRate) {
+          minRate = rate;
+          minExchange = ex;
+        }
+        if (!nextFundingTime || ticker[ex].nextFundingTime < nextFundingTime) {
+          nextFundingTime = ticker[ex].nextFundingTime;
+        }
+      });
+
+      const spread = maxRate - minRate;
+      const timeToFunding = (nextFundingTime - currentTime) / (1000 * 60); // в минутах
+
+      // Критерии для потенциальной сделки:
+      // 1. Спред больше 0.3% (чтобы покрыть комиссии)
+      // 2. До выплаты больше 10 минут и меньше 8 часов
+      if (spread > 0.003 && timeToFunding > 10 && timeToFunding < 480) {
+        potentialTrades.push({
+          ticker: ticker.ticker,
+          spread: spread,
+          spreadPercent: (spread * 100).toFixed(4),
+          longExchange: minExchange,  // Покупаем где funding rate меньше
+          shortExchange: maxExchange, // Продаем где funding rate больше
+          longRate: minRate,
+          shortRate: maxRate,
+          timeToFunding: timeToFunding,
+          timeToFundingFormatted: this.formatTimeToFunding(timeToFunding),
+          potentialProfit: this.estimatePotentialProfit(spread, 1000)
+        });
+      }
+    });
+
+    // Сортируем по убыванию спреда
+    potentialTrades.sort((a, b) => b.spread - a.spread);
+
+    // Логируем топ-5 потенциальных сделок
+    if (potentialTrades.length > 0) {
+      this.logger.log(`
+🔮 ПОТЕНЦИАЛЬНЫЕ СДЕЛКИ В БЛИЖАЙШЕЕ ВРЕМЯ:
+═══════════════════════════════════════════`);
+
+      potentialTrades.slice(0, 5).forEach((trade, index) => {
+        this.logger.log(`${index + 1}. ${trade.ticker}
+   Спред: ${trade.spreadPercent}% (${trade.longExchange} → ${trade.shortExchange})
+   До выплаты: ${trade.timeToFundingFormatted}
+   Потенциальная прибыль: $${trade.potentialProfit.toFixed(2)} с $1000`);
+      });
+
+      this.logger.log(`═══════════════════════════════════════════
+💡 Всего найдено ${potentialTrades.length} потенциальных возможностей
+⏰ Ожидание подходящего времени для входа (за 4 минуты до выплаты)
+`);
+    }
+  }
+
+  /**
+   * Форматирует время до выплаты в читаемый вид
+   */
+  private formatTimeToFunding(minutes: number): string {
+    if (minutes < 60) {
+      return `${Math.floor(minutes)} мин`;
+    } else {
+      const hours = Math.floor(minutes / 60);
+      const remainingMinutes = Math.floor(minutes % 60);
+      return `${hours}ч ${remainingMinutes}мин`;
+    }
+  }
+
+  /**
+   * Оценивает потенциальную прибыль с учетом комиссий
+   */
+  private estimatePotentialProfit(spread: number, positionSize: number): number {
+    // Приблизительная оценка комиссий (0.1% на вход и выход)
+    const estimatedCommissions = positionSize * 0.002; // 0.2% общих комиссий
+    const grossProfit = spread * positionSize;
+    return grossProfit - estimatedCommissions;
   }
 
   /**
