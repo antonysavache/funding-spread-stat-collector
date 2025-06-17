@@ -7,9 +7,9 @@ export class Strategy1Service {
   private readonly logger = new Logger(Strategy1Service.name);
 
   private readonly defaultConfig: Strategy1Config = {
-    minFundingDiff: 0.002,         // 0.2%
+    minFundingDiff: 0.0015,        // 0.15% (было 0.2%)
     maxTimeDiff: 5,                // 5 минут
-    minTimeToFunding: 4,           // 4 минуты
+    minTimeToFunding: 3,           // 3 минуты (было 4)
     maxTimeToFunding: 15           // 15 минут
   };
 

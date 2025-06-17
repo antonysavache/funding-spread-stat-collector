@@ -69,6 +69,12 @@ export class GoogleSheetsService {
       return;
     }
 
+    // ЗАПИСЫВАЕМ ТОЛЬКО ФАКТИЧЕСКИЕ СДЕЛКИ, НЕ ПРОПУСКИ
+    if (decision.action === 'skip') {
+      this.logger.log('🔇 Пропускаем запись в Google Sheets - решение: SKIP');
+      return;
+    }
+
     try {
       const timestamp = new Date().toLocaleString('ru-RU');
       const opportunity = decision.selectedOpportunities[0]; // Берем первую возможность
@@ -78,7 +84,7 @@ export class GoogleSheetsService {
         return;
       }
 
-      // Подготавливаем данные для записи согласно вашей структуре колонок
+      // Подготавливаем данные для записи согласно новой структуре колонок
       const values = [
         [
           timestamp,                                           // A: date
@@ -86,19 +92,21 @@ export class GoogleSheetsService {
           opportunity.longExchange || 'N/A',                 // C: exchange 1
           opportunity.shortExchange || 'N/A',                // D: exchange 2  
           opportunity.ticker || 'N/A',                       // E: coin
-          (opportunity.longFundingRate * 100)?.toFixed(4) + '%' || '0%', // F: funding before 4 min
-          '', // G: funding before 1 min (будет заполнено при проверке стабильности)
-          (decision.totalPotentialProfit)?.toFixed(4) || '0', // H: dirty pnl
-          (decision.totalCommissions)?.toFixed(4) || '0',     // I: commission 1
-          '', // J: commission 2 (если нужно разделить комиссии по биржам)
-          (decision.netProfit)?.toFixed(4) || '0'             // K: clean pnl
+          (opportunity.longFundingRate * 100)?.toFixed(4) + '%' || '0%', // F: funding before 4 min exchange 1
+          '', // G: funding before 1 min exchange 1 (будет заполнено при проверке стабильности)
+          (opportunity.shortFundingRate * 100)?.toFixed(4) + '%' || '0%', // H: funding before 4 min exchange 2
+          '', // I: funding before 1 min exchange 2 (будет заполнено при проверке стабильности)
+          (decision.totalPotentialProfit)?.toFixed(4) || '0', // J: dirty pnl
+          (decision.totalCommissions / 2)?.toFixed(4) || '0', // K: commission 1 (половина от общих комиссий)
+          (decision.totalCommissions / 2)?.toFixed(4) || '0', // L: commission 2 (половина от общих комиссий)
+          (decision.netProfit)?.toFixed(4) || '0'             // M: clean pnl
         ]
       ];
 
-      // Добавляем данные в таблицу (используем первый лист, так как видно что у вас один лист)
+      // Добавляем данные в таблицу (используем колонки A-M)
       const request = {
         spreadsheetId: this.spreadsheetId,
-        range: 'A:K', // Колонки A-K как на скриншоте
+        range: 'A:M', // Колонки A-M как в новой структуре
         valueInputOption: 'RAW',
         insertDataOption: 'INSERT_ROWS',
         resource: {
@@ -108,7 +116,7 @@ export class GoogleSheetsService {
 
       await this.sheets.spreadsheets.values.append(request);
 
-      this.logger.log(`📊 Сделка добавлена в Google Sheets: ${opportunity?.ticker} (${decision.action})`);
+      this.logger.log(`📊 РЕАЛЬНАЯ СДЕЛКА добавлена в Google Sheets: ${opportunity?.ticker} (${decision.action})`);
 
     } catch (error) {
       this.logger.error('❌ Ошибка записи сделки в Google Sheets:', error.message);
@@ -128,7 +136,7 @@ export class GoogleSheetsService {
       // Находим последнюю строку с нужным тикером и биржей
       const response = await this.sheets.spreadsheets.values.get({
         spreadsheetId: this.spreadsheetId,
-        range: 'A:K'
+        range: 'A:M'
       });
 
       const rows = response.data.values || [];
@@ -184,12 +192,14 @@ export class GoogleSheetsService {
           'binance',                    // C: exchange 1
           'bybit',                      // D: exchange 2
           'TESTUSDT',                   // E: coin
-          '0.2500%',                    // F: funding before 4 min
-          '0.2450%',                    // G: funding before 1 min
-          '2.50',                       // H: dirty pnl
-          '1.45',                       // I: commission 1
-          '',                           // J: commission 2
-          '1.05'                        // K: clean pnl
+          '0.2500%',                    // F: funding before 4 min exchange 1
+          '0.2450%',                    // G: funding before 1 min exchange 1
+          '0.2600%',                    // H: funding before 4 min exchange 2
+          '0.2550%',                    // I: funding before 1 min exchange 2
+          '2.50',                       // J: dirty pnl
+          '0.75',                       // K: commission 1
+          '0.70',                       // L: commission 2
+          '1.05'                        // M: clean pnl
         ]
       ];
 
@@ -198,7 +208,7 @@ export class GoogleSheetsService {
       // Добавляем тестовую запись
       const request = {
         spreadsheetId: this.spreadsheetId,
-        range: 'A:K',
+        range: 'A:M',
         valueInputOption: 'RAW',
         insertDataOption: 'INSERT_ROWS',
         resource: {
