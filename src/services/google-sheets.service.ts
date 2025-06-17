@@ -7,7 +7,8 @@ import { FundingStabilityCheck } from '../interfaces/position-monitoring.interfa
 export class GoogleSheetsService {
   private readonly logger = new Logger(GoogleSheetsService.name);
   private sheets: any;
-  private readonly spreadsheetId = process.env.GOOGLE_SPREADSHEET_ID;
+  private readonly spreadsheetId = '1BD3mYqiEEbcadDSqoiyS6rk8M9ZTAbeYsp3OHHV4Lug';
+  private readonly enabled = true; // Включаем Google Sheets по умолчанию
 
   constructor() {
     this.initializeGoogleSheets();
@@ -16,9 +17,8 @@ export class GoogleSheetsService {
   private async initializeGoogleSheets() {
     try {
       // Проверяем, включены ли Google Sheets
-      const enabled = process.env.GOOGLE_SHEETS_ENABLED === 'true';
-      if (!enabled) {
-        this.logger.log('📊 Google Sheets отключены (GOOGLE_SHEETS_ENABLED=false)');
+      if (!this.enabled) {
+        this.logger.log('📊 Google Sheets отключены');
         return;
       }
 
