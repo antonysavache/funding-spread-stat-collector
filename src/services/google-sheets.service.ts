@@ -22,6 +22,8 @@ export class GoogleSheetsService {
         return;
       }
 
+      this.logger.log('🔧 Начинаем инициализацию Google Sheets...');
+
       // Получаем credentials из переменной окружения
       const credentialsJson = process.env.GOOGLE_SHEETS_CREDENTIALS;
       if (!credentialsJson) {
@@ -29,7 +31,9 @@ export class GoogleSheetsService {
         return;
       }
 
+      this.logger.log('🔑 Credentials найдены, парсим JSON...');
       const credentials = JSON.parse(credentialsJson);
+      this.logger.log('✅ JSON успешно распарсен');
 
       // Инициализация Google Sheets API с credentials из env
       const auth = new google.auth.GoogleAuth({
@@ -38,16 +42,19 @@ export class GoogleSheetsService {
       });
 
       this.sheets = google.sheets({ version: 'v4', auth });
+      this.logger.log(`📊 Google Sheets объект создан, spreadsheetId: ${this.spreadsheetId}`);
 
       this.logger.log('✅ Google Sheets API инициализирован с существующими credentials');
       
       // Добавляем тестовую запись для проверки работы
       setTimeout(async () => {
+        this.logger.log('⏰ Запускаем тестовую запись через 3 секунды...');
         await this.addTestRecord();
       }, 3000); // Небольшая задержка для завершения инициализации
 
     } catch (error) {
       this.logger.error('❌ Ошибка инициализации Google Sheets API:', error.message);
+      this.logger.error('❌ Полная ошибка:', error);
     }
   }
 
@@ -156,8 +163,11 @@ export class GoogleSheetsService {
    * Добавляет тестовую запись для проверки работы Google Sheets
    */
   async addTestRecord(): Promise<void> {
+    this.logger.log(`🔍 Проверка настроек: sheets=${!!this.sheets}, spreadsheetId=${this.spreadsheetId}`);
+    
     if (!this.sheets || !this.spreadsheetId) {
       this.logger.warn('Google Sheets не настроен, пропускаем тестовую запись');
+      this.logger.warn(`Детали: sheets=${!!this.sheets}, spreadsheetId=${this.spreadsheetId}`);
       return;
     }
 
@@ -181,6 +191,8 @@ export class GoogleSheetsService {
         ]
       ];
 
+      this.logger.log('📝 Попытка записи тестовых данных в Google Sheets...');
+
       // Добавляем тестовую запись
       const request = {
         spreadsheetId: this.spreadsheetId,
@@ -198,6 +210,7 @@ export class GoogleSheetsService {
 
     } catch (error) {
       this.logger.error('❌ Ошибка добавления тестовой записи в Google Sheets:', error.message);
+      this.logger.error('❌ Полная ошибка:', error);
     }
   }
 }
