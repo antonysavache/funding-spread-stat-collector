@@ -116,8 +116,8 @@ Position ID: ${positionId}
 
       this.stabilityChecks.push(stabilityCheck);
 
-      // Записываем результат проверки в Google Sheets
-      await this.googleSheetsService.addStabilityCheckToSheet(stabilityCheck);
+      // Обновляем колонку "funding before 1 min" в Google Sheets
+      await this.googleSheetsService.updateFundingBefore1Min(stabilityCheck);
 
       // Логируем результат проверки с четкой меткой
       this.logger.log(`

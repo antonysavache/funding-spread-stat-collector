@@ -58,31 +58,32 @@ export class GoogleSheetsService {
       const timestamp = new Date().toLocaleString('ru-RU');
       const opportunity = decision.selectedOpportunities[0]; // Берем первую возможность
 
-      // Подготавливаем данные для записи
+      if (!opportunity) {
+        this.logger.warn('Нет данных о возможности для записи в таблицу');
+        return;
+      }
+
+      // Подготавливаем данные для записи согласно вашей структуре колонок
       const values = [
         [
-          timestamp,                                           // A: Время
-          decision.action.toUpperCase(),                      // B: Действие
-          opportunity?.ticker || 'N/A',                       // C: Тикер
-          opportunity?.longExchange || 'N/A',                 // D: Лонг биржа
-          opportunity?.shortExchange || 'N/A',                // E: Шорт биржа
-          opportunity?.strategy || 'N/A',                     // F: Стратегия
-          (opportunity?.longFundingRate * 100)?.toFixed(4) || '0', // G: Лонг funding %
-          (opportunity?.shortFundingRate * 100)?.toFixed(4) || '0', // H: Шорт funding %
-          (decision.totalPotentialProfit)?.toFixed(4) || '0', // I: Валовая прибыль $
-          (decision.totalCommissions)?.toFixed(4) || '0',     // J: Комиссии $
-          (decision.netProfit)?.toFixed(4) || '0',            // K: Чистая прибыль $
-          ((decision.netProfit / decision.positionSize) * 100)?.toFixed(4) || '0', // L: Чистая прибыль %
-          decision.positionSize?.toString() || '1000',        // M: Размер позиции $
-          opportunity?.timeToFunding?.toFixed(1) || '0',      // N: Время до выплаты мин
-          decision.reason || 'N/A'                            // O: Причина решения
+          timestamp,                                           // A: date
+          opportunity.strategy === 'rate_arbitrage' ? 'Strategy 1' : 'Strategy 2', // B: strategy
+          opportunity.longExchange || 'N/A',                 // C: exchange 1
+          opportunity.shortExchange || 'N/A',                // D: exchange 2  
+          opportunity.ticker || 'N/A',                       // E: coin
+          (opportunity.longFundingRate * 100)?.toFixed(4) + '%' || '0%', // F: funding before 4 min
+          '', // G: funding before 1 min (будет заполнено при проверке стабильности)
+          (decision.totalPotentialProfit)?.toFixed(4) || '0', // H: dirty pnl
+          (decision.totalCommissions)?.toFixed(4) || '0',     // I: commission 1
+          '', // J: commission 2 (если нужно разделить комиссии по биржам)
+          (decision.netProfit)?.toFixed(4) || '0'             // K: clean pnl
         ]
       ];
 
-      // Добавляем данные в таблицу
+      // Добавляем данные в таблицу (используем первый лист, так как видно что у вас один лист)
       const request = {
         spreadsheetId: this.spreadsheetId,
-        range: 'TradingTrades!A:O', // Лист "TradingTrades", колонки A-O
+        range: 'A:K', // Колонки A-K как на скриншоте
         valueInputOption: 'RAW',
         insertDataOption: 'INSERT_ROWS',
         resource: {
@@ -100,168 +101,48 @@ export class GoogleSheetsService {
   }
 
   /**
-   * Добавляет результат проверки стабильности funding rate
+   * Обновляет колонку "funding before 1 min" при проверке стабильности
    */
-  async addStabilityCheckToSheet(check: FundingStabilityCheck): Promise<void> {
+  async updateFundingBefore1Min(check: FundingStabilityCheck): Promise<void> {
     if (!this.sheets || !this.spreadsheetId) {
-      this.logger.warn('Google Sheets не настроен, пропускаем запись проверки стабильности');
+      this.logger.warn('Google Sheets не настроен, пропускаем обновление funding before 1 min');
       return;
     }
 
     try {
-      const values = [
-        [
-          check.checkTime.toLocaleString('ru-RU'),           // A: Время проверки
-          check.ticker,                                       // B: Тикер
-          check.exchange,                                     // C: Биржа
-          (check.originalFundingRate * 100).toFixed(4),      // D: Исходный funding %
-          (check.currentFundingRate * 100).toFixed(4),       // E: Текущий funding %
-          check.changePercent.toFixed(2),                    // F: Изменение %
-          check.isStable ? 'СТАБИЛЬНЫЙ' : 'ИЗМЕНИЛСЯ',       // G: Статус
-          check.timeBeforeFunding.toFixed(1),                // H: До выплаты мин
-          check.nextFundingTime.toLocaleString('ru-RU'),     // I: Время выплаты
-          check.positionId                                    // J: ID позиции
-        ]
-      ];
-
-      const request = {
+      // Находим последнюю строку с нужным тикером и биржей
+      const response = await this.sheets.spreadsheets.values.get({
         spreadsheetId: this.spreadsheetId,
-        range: 'TradingStability!A:J', // Лист "TradingStability", колонки A-J
-        valueInputOption: 'RAW',
-        insertDataOption: 'INSERT_ROWS',
-        resource: {
-          values: values
-        }
-      };
-
-      await this.sheets.spreadsheets.values.append(request);
-
-      this.logger.log(`📊 Проверка стабильности добавлена в Google Sheets: ${check.ticker} на ${check.exchange} (${check.isStable ? 'стабильный' : 'изменился'})`);
-
-    } catch (error) {
-      this.logger.error('❌ Ошибка записи проверки стабильности в Google Sheets:', error.message);
-    }
-  }
-
-  /**
-   * Создает заголовки для листов (вызывать один раз для настройки)
-   */
-  async createHeaders(): Promise<void> {
-    if (!this.sheets || !this.spreadsheetId) {
-      this.logger.error('Google Sheets не настроен');
-      return;
-    }
-
-    try {
-      // Заголовки для листа Trades
-      const tradesHeaders = [
-        [
-          'Время',
-          'Действие', 
-          'Тикер',
-          'Лонг биржа',
-          'Шорт биржа',
-          'Стратегия',
-          'Лонг funding %',
-          'Шорт funding %',
-          'Валовая прибыль $',
-          'Комиссии $',
-          'Чистая прибыль $',
-          'Чистая прибыль %',
-          'Размер позиции $',
-          'До выплаты мин',
-          'Причина'
-        ]
-      ];
-
-      // Заголовки для листа Stability
-      const stabilityHeaders = [
-        [
-          'Время проверки',
-          'Тикер',
-          'Биржа',
-          'Исходный funding %',
-          'Текущий funding %',
-          'Изменение %',
-          'Статус',
-          'До выплаты мин',
-          'Время выплаты',
-          'ID позиции'
-        ]
-      ];
-
-      // Добавляем заголовки в лист TradingTrades
-      await this.sheets.spreadsheets.values.update({
-        spreadsheetId: this.spreadsheetId,
-        range: 'TradingTrades!A1:O1',
-        valueInputOption: 'RAW',
-        resource: {
-          values: tradesHeaders
-        }
+        range: 'A:K'
       });
 
-      // Добавляем заголовки в лист TradingStability
-      await this.sheets.spreadsheets.values.update({
-        spreadsheetId: this.spreadsheetId,
-        range: 'TradingStability!A1:J1',
-        valueInputOption: 'RAW',
-        resource: {
-          values: stabilityHeaders
-        }
-      });
-
-      this.logger.log('✅ Заголовки созданы в Google Sheets');
-
-    } catch (error) {
-      this.logger.error('❌ Ошибка создания заголовков в Google Sheets:', error.message);
-    }
-  }
-
-  /**
-   * Добавляет статистику работы бота
-   */
-  async addDailyStats(stats: any): Promise<void> {
-    if (!this.sheets || !this.spreadsheetId) {
-      this.logger.warn('Google Sheets не настроен, пропускаем запись статистики');
-      return;
-    }
-
-    try {
-      const today = new Date().toLocaleDateString('ru-RU');
+      const rows = response.data.values || [];
       
-      const values = [
-        [
-          today,                                              // A: Дата
-          stats.totalAnalyzes || 0,                          // B: Всего анализов
-          stats.strategy1Entries || 0,                       // C: Входы Strategy 1
-          stats.strategy2Entries || 0,                       // D: Входы Strategy 2
-          stats.bothStrategies || 0,                         // E: Оба стратегии
-          stats.skipped || 0,                                // F: Пропущено
-          stats.successRate || '0%',                         // G: Успешность
-          stats.totalNetProfit?.toFixed(4) || '0',          // H: Общая чистая прибыль $
-          stats.totalCommissions?.toFixed(4) || '0',        // I: Общие комиссии $
-          stats.avgProfit?.toFixed(4) || '0',               // J: Средняя прибыль $
-          stats.stabilityChecks || 0,                        // K: Проверок стабильности
-          stats.stableRate || '0%'                          // L: Процент стабильности
-        ]
-      ];
+      // Ищем строку с нужным тикером (колонка E) - идем снизу вверх для последней записи
+      for (let i = rows.length - 1; i >= 1; i--) { // Начинаем с конца, пропускаем заголовок
+        const row = rows[i];
+        const coin = row[4]; // Колонка E (coin)
+        
+        if (coin === check.ticker) {
+          // Обновляем колонку G (funding before 1 min)
+          const rowNumber = i + 1; // +1 потому что индексы начинаются с 0, а строки с 1
+          
+          await this.sheets.spreadsheets.values.update({
+            spreadsheetId: this.spreadsheetId,
+            range: `G${rowNumber}`,
+            valueInputOption: 'RAW',
+            resource: {
+              values: [[(check.currentFundingRate * 100).toFixed(4) + '%']]
+            }
+          });
 
-      const request = {
-        spreadsheetId: this.spreadsheetId,
-        range: 'TradingStats!A:L',
-        valueInputOption: 'RAW',
-        insertDataOption: 'INSERT_ROWS',
-        resource: {
-          values: values
+          this.logger.log(`📊 Обновлен funding before 1 min для ${check.ticker}: ${(check.currentFundingRate * 100).toFixed(4)}%`);
+          break;
         }
-      };
-
-      await this.sheets.spreadsheets.values.append(request);
-
-      this.logger.log(`📊 Дневная статистика добавлена в Google Sheets: ${today}`);
+      }
 
     } catch (error) {
-      this.logger.error('❌ Ошибка записи дневной статистики в Google Sheets:', error.message);
+      this.logger.error('❌ Ошибка обновления funding before 1 min в Google Sheets:', error.message);
     }
   }
 
