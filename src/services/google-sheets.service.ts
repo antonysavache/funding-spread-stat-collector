@@ -11,10 +11,12 @@ export class GoogleSheetsService {
   private readonly enabled = true; // Включаем Google Sheets по умолчанию
 
   constructor() {
+    this.logger.log('🚀 GoogleSheetsService конструктор вызван');
     this.initializeGoogleSheets();
   }
 
   private async initializeGoogleSheets() {
+    this.logger.log('🔧 initializeGoogleSheets метод вызван');
     try {
       // Проверяем, включены ли Google Sheets
       if (!this.enabled) {
