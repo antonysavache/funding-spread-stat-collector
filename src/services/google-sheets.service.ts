@@ -40,6 +40,12 @@ export class GoogleSheetsService {
       this.sheets = google.sheets({ version: 'v4', auth });
 
       this.logger.log('✅ Google Sheets API инициализирован с существующими credentials');
+      
+      // Добавляем тестовую запись для проверки работы
+      setTimeout(async () => {
+        await this.addTestRecord();
+      }, 3000); // Небольшая задержка для завершения инициализации
+
     } catch (error) {
       this.logger.error('❌ Ошибка инициализации Google Sheets API:', error.message);
     }
@@ -147,24 +153,51 @@ export class GoogleSheetsService {
   }
 
   /**
-   * Проверяет подключение к Google Sheets
+   * Добавляет тестовую запись для проверки работы Google Sheets
    */
-  async testConnection(): Promise<boolean> {
+  async addTestRecord(): Promise<void> {
     if (!this.sheets || !this.spreadsheetId) {
-      this.logger.error('Google Sheets не настроен');
-      return false;
+      this.logger.warn('Google Sheets не настроен, пропускаем тестовую запись');
+      return;
     }
 
     try {
-      const response = await this.sheets.spreadsheets.get({
-        spreadsheetId: this.spreadsheetId
-      });
+      const timestamp = new Date().toLocaleString('ru-RU');
+      
+      // Тестовые данные
+      const values = [
+        [
+          timestamp,                    // A: date
+          'TEST',                       // B: strategy
+          'binance',                    // C: exchange 1
+          'bybit',                      // D: exchange 2
+          'TESTUSDT',                   // E: coin
+          '0.2500%',                    // F: funding before 4 min
+          '0.2450%',                    // G: funding before 1 min
+          '2.50',                       // H: dirty pnl
+          '1.45',                       // I: commission 1
+          '',                           // J: commission 2
+          '1.05'                        // K: clean pnl
+        ]
+      ];
 
-      this.logger.log(`✅ Подключение к Google Sheets успешно: ${response.data.properties.title}`);
-      return true;
+      // Добавляем тестовую запись
+      const request = {
+        spreadsheetId: this.spreadsheetId,
+        range: 'A:K',
+        valueInputOption: 'RAW',
+        insertDataOption: 'INSERT_ROWS',
+        resource: {
+          values: values
+        }
+      };
+
+      await this.sheets.spreadsheets.values.append(request);
+
+      this.logger.log('✅ Тестовая запись добавлена в Google Sheets успешно!');
+
     } catch (error) {
-      this.logger.error('❌ Ошибка подключения к Google Sheets:', error.message);
-      return false;
+      this.logger.error('❌ Ошибка добавления тестовой записи в Google Sheets:', error.message);
     }
   }
 }
