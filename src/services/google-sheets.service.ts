@@ -36,6 +36,7 @@ export class GoogleSheetsService {
       this.logger.log('🔑 Credentials найдены, парсим JSON...');
       const credentials = JSON.parse(credentialsJson);
       this.logger.log('✅ JSON успешно распарсен');
+      this.logger.log(`📧 Service Account Email: ${credentials.client_email}`);
 
       // Инициализация Google Sheets API с credentials из env
       const auth = new google.auth.GoogleAuth({
